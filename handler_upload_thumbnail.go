@@ -7,7 +7,10 @@ import (
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
 	"io"
-	"encoding/base64"
+	"path/filepath"
+	"os"
+	"strings"
+	"mime"
 )
 
 func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +39,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	// TODO: implement the upload here
 	const maxMemory = 10 << 20
 	r.ParseMultipartForm(maxMemory)
-	file, _, err := r.FormFile("thumbnail")
+	file, header, err := r.FormFile("thumbnail")
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error getting thumbnail", err)
 		return
@@ -44,9 +47,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	defer file.Close()
 
-	//contentType := header.Header.Get("Content-Type")
+	contentType := header.Header.Get("Content-Type")
 
-	img, err := io.ReadAll(file)
+	_, err = io.ReadAll(file)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error reading file", err)
 		return
@@ -62,13 +65,35 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	base_img := base64.StdEncoding.EncodeToString(img)
-	url := fmt.Sprintf("data:text/plain;base64,%s", base_img)
+	mimeType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't parse media", err)
+		return
+	}
+	if mimeType != "image/jpeg" && mimeType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "mime type not supported", err)
+		return
+	}
+	extension := strings.Split(contentType, "/")[1]
+	path := filepath.Join(cfg.assetsRoot, videoID.String() + "." + extension)
+	outFile, err := os.Create(path)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create file", err)
+		return
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file", err)
+		return
+	}
+
+	url := fmt.Sprintf("http://localhost:%s/assets/%s.%s", cfg.port, videoID, extension)
 	md.ThumbnailURL = &url
 
 	err = cfg.db.UpdateVideo(md)
 	if err != nil {
-		//delete(videoThumbnails, videoID)
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
 		return
 	}
