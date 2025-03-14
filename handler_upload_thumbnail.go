@@ -83,6 +83,12 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer outFile.Close()
 
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't seek file", err)
+		return
+	}
+
 	_, err = io.Copy(outFile, file)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't copy file", err)
